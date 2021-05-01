@@ -1,3 +1,4 @@
+#Requires -Version 7.0.0
 <#PSScriptInfo
 
 .VERSION 2021.05.00
@@ -43,8 +44,17 @@
 .PARAMETER VmPath
  The path to the VM's bundle file.
 
+.INPUTS
+ NONE
+
+.OUTPUTS
+ VmDiskShrinkStats
+
+.NOTES
+ This script requires the operating system of the host OS to be macOS and that VMWare Fusion be installed on the host system.
+
 .EXAMPLE
- / > ./Invoke-VmwareFusionDiskShrink.ps1 -VmPath "./Virtual Machines/Ubuntu 20.04 LTS.vmwarevm/"
+ PS /> ./Invoke-VmwareFusionDiskShrink.ps1 -VmPath "./Virtual Machines/Ubuntu 20.04 LTS.vmwarevm/"
  
  Perform the shrink operation on a VM.
 
@@ -101,6 +111,55 @@ param(
 )
 
 <#
+    - Internal script function:
+        'AddTotalVmdkSize'
+
+    - Purpose:
+        Gets the total size of all the '.vmdk' files in the VM bundle.
+#>
+function AddTotalVmdkSize {
+    param(
+        [Parameter(Position = 0, Mandatory)]
+        [string]$Path
+    )
+
+    $vmTotalSize = 0
+    foreach ($file in (Get-ChildItem -Path $Path | Where-Object { $PSItem.Extension -eq ".vmdk" })) {
+        $vmTotalSize += $file.Length
+    }
+
+    return $vmTotalSize
+}
+
+<#
+    - Internal class:
+        'VmDiskShrinkStats'
+#>
+class VmDiskShrinkStats {
+    [string]$VmPath
+    [double]$BeforeSizeInGB
+    [double]$AfterSizeInGB
+    [double]$SpaceSavedInGB
+}
+
+<#
+    We need to validate that the OS this script is running on is actually a macOS based system.
+#>
+switch ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)) {
+    $false {
+        $PSCmdlet.ThrowTerminatingError(
+            [System.Management.Automation.ErrorRecord]::new(
+                [System.Exception]::new("This script can only run on macOS."),
+                "IsNotRunningMacOS",
+                [System.Management.Automation.ErrorCategory]::InvalidOperation,
+                [System.Runtime.InteropServices.RuntimeInformation]::RuntimeIdentifier
+            )
+        )
+        break
+    }
+}
+
+<#
     We need to validate that VMWare Fusion is actually installed to the local system.
 
     If it's not installed, then this script won't work at all.
@@ -126,27 +185,6 @@ switch (Test-Path -Path $vmwareFusionPath) {
         Write-Verbose "VMWare Fusion is installed on the local system."
         break
     }
-}
-
-<#
-    - Internal script function:
-        'AddTotalVmdkSize'
-
-    - Purpose:
-        Gets the total size of all the '.vmdk' files in the VM bundle.
-#>
-function AddTotalVmdkSize {
-    param(
-        [Parameter(Position = 0, Mandatory)]
-        [string]$Path
-    )
-
-    $vmTotalSize = 0
-    foreach ($file in (Get-ChildItem -Path $Path | Where-Object { $PSItem.Extension -eq ".vmdk" })) {
-        $vmTotalSize += $file.Length
-    }
-
-    return $vmTotalSize
 }
 
 #Create the full file path to the 'vmware-vdiskmanager' executable. This is what will be executed to defrag and shrink the VM disk file.
@@ -213,7 +251,7 @@ $vmTotalSizeAfter = [System.Math]::Round(
 $savedSpace = $vmTotalSizeBefore - $vmTotalSizeAfter
 
 #Return an object with results of the operation.
-return [pscustomobject]@{
+return [VmDiskShrinkStats]@{
     "VmPath"         = $vmPathResolved;
     "BeforeSizeInGB" = $vmTotalSizeBefore;
     "AfterSizeInGB"  = $vmTotalSizeAfter
