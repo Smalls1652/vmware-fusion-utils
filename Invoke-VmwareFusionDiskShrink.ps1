@@ -14,7 +14,7 @@
 
 .LICENSEURI
 
-.PROJECTURI
+.PROJECTURI https://github.com/Smalls1652/vmware-fusion-utils/blob/main/Invoke-VmwareFusionDiskShrink.ps1
 
 .ICONURI
 
